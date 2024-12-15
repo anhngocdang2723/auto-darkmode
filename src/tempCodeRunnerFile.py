@@ -1,27 +1,93 @@
 import os
 import time
-from datetime import datetime
+import ctypes
+from datetime import datetime, timedelta
+import subprocess
+import sys
+
+def is_admin():
+    """Check if script has admin privileges"""
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
+
+def check_windows_compatibility():
+    """Check if Windows version is compatible"""
+    if sys.getwindowsversion().major < 10:
+        print("This script requires Windows 10 or later")
+        sys.exit(1)
 
 def is_night_time():
-    """Check if the current time is between 7 PM and 7 AM."""
+    """
+    Check if the current time is between 7 PM and 7 AM.
+    """
     current_hour = datetime.now().hour
     return current_hour >= 19 or current_hour < 7
 
-def enable_dark_mode():
-    """Enable dark mode on the laptop."""
-    # This is a placeholder for the actual command to enable dark mode.
-    # The implementation will vary based on the operating system.
-    if os.name == 'nt':  # Windows
-        os.system("powershell -command \"Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes' -Name 'Personalize' -Value 1\"")
-    elif os.name == 'posix':  # macOS or Linux
-        os.system("osascript -e 'tell application \"System Events\" to tell appearance preferences to set dark mode to true'")
+def time_until_next_check():
+    """
+    Calculate the time in seconds until the next full hour.
+    """
+    now = datetime.now()
+    next_check = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+    return (next_check - now).total_seconds()
+
+def enable_dark_mode_windows():
+    """Enable dark mode on Windows"""
+    if not is_admin():
+        print("Please run as administrator")
+        # Re-run the program with admin rights
+        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+        return
+
+    try:
+        # Set dark mode for apps
+        subprocess.run([
+            "reg.exe",
+            "add",
+            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            "/v",
+            "AppsUseLightTheme",
+            "/t",
+            "REG_DWORD",
+            "/d",
+            "0",
+            "/f"
+        ], check=True)
+
+        # Set dark mode for system
+        subprocess.run([
+            "reg.exe",
+            "add",
+            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            "/v",
+            "SystemUsesLightTheme",
+            "/t",
+            "REG_DWORD",
+            "/d",
+            "0",
+            "/f"
+        ], check=True)
+        print("Dark mode enabled")
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to enable dark mode: {e}")
 
 def main():
-    """Main function to check the time and enable dark mode if necessary."""
+    """
+    Main function to check the time and enable dark mode if necessary.
+    """
     while True:
         if is_night_time():
-            enable_dark_mode()
-        time.sleep(3600)  # Check every hour
+            print("Nighttime detected. Enabling dark mode on Windows...")
+            enable_dark_mode_windows()
+        else:
+            print("Daytime detected. Dark mode not required.")
+        time.sleep(time_until_next_check())  # Sleep until the next check
 
 if __name__ == "__main__":
-    main()
+    check_windows_compatibility()
+    if os.name == 'nt':  # Ensure the script runs only on Windows
+        main()
+    else:
+        print("This script is designed to run only on Windows.")
